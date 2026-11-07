@@ -131,7 +131,7 @@ Most chess engines (like Stockfish) play either perfectly or unnaturally robotic
 
 ---
 
-### Phase 6: Real Product (User Experience & Features)
+### Phase 6: Real Product (User Experience & Features) (Completed)
 * **Goal**: Turn the app into a full-featured personal chess training platform with user accounts, game history, custom practice puzzles, and mobile support.
 * **Steps**:
   1. Add authentication with Supabase (Google OAuth & Email login).
@@ -140,9 +140,9 @@ Most chess engines (like Stockfish) play either perfectly or unnaturally robotic
   4. Build a **"Blunder Practice Mode"**: automatically turns the user's past mistakes into bite-sized tactical puzzles.
   5. Polish responsive mobile layout and configure Progressive Web App (PWA) support for mobile home screen installation.
 * **Done When**:
-  - [ ] Users can sign in, review past games, and see their improvement metrics.
-  - [ ] Blunder practice mode generates playable puzzles sourced from the player's actual games.
-  - [ ] App is fully responsive and touch-friendly on iOS and Android viewports.
+  - [x] Users can sign in, review past games, and see their improvement metrics.
+  - [x] Blunder practice mode generates playable puzzles sourced from the player's actual games.
+  - [x] App is fully responsive and touch-friendly on iOS and Android viewports.
 
 ---
 
