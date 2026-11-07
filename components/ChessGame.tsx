@@ -9,6 +9,9 @@ import { getSmartBotMove } from "@/lib/engine/alphaBeta";
 import { getHumanLikeMove } from "@/lib/engine/humanBot";
 import { calculateAdaptiveRating } from "@/lib/engine/adaptive";
 import { evaluateBoard } from "@/lib/engine/evaluate";
+import { analyzeGameHistory } from "@/lib/coach/analyzer";
+import { GameReviewReport } from "@/types/coach";
+import MistakeCoachModal from "@/components/MistakeCoachModal";
 import { BotType, DifficultyLevel } from "@/types/chess";
 import {
   RotateCcw,
@@ -25,7 +28,7 @@ import {
   Scissors,
   Sparkles,
   Smile,
-  ShieldAlert,
+  Lightbulb,
 } from "lucide-react";
 
 export default function ChessGame() {
@@ -50,6 +53,15 @@ export default function ChessGame() {
   const [simulatedRating, setSimulatedRating] = useState<number>(1200);
   const [simulatedMood, setSimulatedMood] = useState<string>("Focused");
   const [adaptiveNote, setAdaptiveNote] = useState<string>("Playing at target level");
+
+  // Mistake Coach State
+  const [isCoachOpen, setIsCoachOpen] = useState<boolean>(false);
+  const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
+  const [reviewReport, setReviewReport] = useState<GameReviewReport>({
+    totalMovesAnalyzed: 0,
+    accuracyScore: 100,
+    blunders: [],
+  });
 
   // Performance Telemetry
   const [calcTimeMs, setCalcTimeMs] = useState<number | null>(null);
@@ -142,7 +154,6 @@ export default function ChessGame() {
       worker.onmessage = (event: MessageEvent) => {
         const data = event.data;
         if (data.type === "HUMAN_MOVE_CALCULATED") {
-          // Delay applying the move by the simulated human thinking time
           botTimeoutRef.current = setTimeout(() => {
             applyBotMove(
               data.move,
@@ -193,7 +204,6 @@ export default function ChessGame() {
     setIsBotThinking(true);
 
     if (botType === "human-like") {
-      // Human-Like Bot: Organic delays & adaptive inaccuracies
       if (workerRef.current) {
         workerRef.current.postMessage({
           type: "CALCULATE_HUMAN_MOVE",
@@ -217,7 +227,6 @@ export default function ChessGame() {
         }, result.thinkingDelayMs);
       }
     } else if (botType === "smart-v2") {
-      // Pure Alpha-Beta Bot v2
       botTimeoutRef.current = setTimeout(() => {
         const depth = getDepthForDifficulty();
         if (workerRef.current) {
@@ -239,7 +248,6 @@ export default function ChessGame() {
         }
       }, 300);
     } else if (botType === "minimax-v1") {
-      // Bot v1: Fixed Minimax depth 2
       botTimeoutRef.current = setTimeout(() => {
         const start = performance.now();
         const result = getMinimaxMove(game, 2);
@@ -247,7 +255,6 @@ export default function ChessGame() {
         applyBotMove(result.move, undefined, undefined, elapsed);
       }, 350);
     } else {
-      // Random Bot
       botTimeoutRef.current = setTimeout(() => {
         const move = getRandomMove(game);
         applyBotMove(move, 1, 0, 1);
@@ -295,6 +302,17 @@ export default function ChessGame() {
     },
     [isGameOver, updateGameStatus, triggerBotMove]
   );
+
+  // Run Mistake Coach Analysis
+  const handleRunMistakeCoach = useCallback(() => {
+    setIsAnalyzing(true);
+    setTimeout(() => {
+      const report = analyzeGameHistory(gameRef.current.history());
+      setReviewReport(report);
+      setIsAnalyzing(false);
+      setIsCoachOpen(true);
+    }, 120);
+  }, []);
 
   // New Game
   const handleNewGame = useCallback(() => {
@@ -369,332 +387,367 @@ export default function ChessGame() {
   }
 
   return (
-    <div className="w-full max-w-6xl mx-auto flex flex-col lg:flex-row gap-6 items-start justify-center">
-      {/* Left Column: Chessboard */}
-      <div className="flex-1 w-full max-w-[560px] mx-auto flex flex-col items-center">
-        {/* Opponent Info Bar */}
-        <div className="w-full flex items-center justify-between px-3 py-2 bg-slate-900 border border-slate-800 rounded-t-xl text-xs text-slate-300">
-          <div className="flex items-center gap-2">
-            <div className="p-1.5 rounded-lg bg-slate-800 text-blue-400">
-              <Bot className="w-4 h-4" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="font-semibold text-slate-100">
-                  {botType === "human-like"
-                    ? "Alex (Human-Like Bot)"
-                    : botType === "smart-v2"
-                    ? `Smart Bot v2 (${difficulty.toUpperCase()})`
-                    : botType === "minimax-v1"
-                    ? "Bot v1 (Minimax)"
-                    : "Random Bot"}
-                </span>
-                {botType === "human-like" && (
-                  <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 font-mono">
-                    ~{simulatedRating} ELO
-                  </span>
-                )}
+    <>
+      {/* Mistake Coach Modal */}
+      <MistakeCoachModal
+        isOpen={isCoachOpen}
+        onClose={() => setIsCoachOpen(false)}
+        report={reviewReport}
+      />
+
+      <div className="w-full max-w-6xl mx-auto flex flex-col lg:flex-row gap-6 items-start justify-center">
+        {/* Left Column: Chessboard */}
+        <div className="flex-1 w-full max-w-[560px] mx-auto flex flex-col items-center">
+          {/* Opponent Info Bar */}
+          <div className="w-full flex items-center justify-between px-3 py-2 bg-slate-900 border border-slate-800 rounded-t-xl text-xs text-slate-300">
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 rounded-lg bg-slate-800 text-blue-400">
+                <Bot className="w-4 h-4" />
               </div>
-              <span className="text-[11px] text-slate-500 flex items-center gap-1.5 mt-0.5">
-                {botType === "human-like" ? (
-                  <>
-                    <span>Mood: <strong className="text-slate-300">{simulatedMood}</strong></span>
-                    <span>•</span>
-                    <span className="text-slate-400">{adaptiveNote}</span>
-                  </>
-                ) : botType === "smart-v2" ? (
-                  `Alpha-Beta Depth ${getDepthForDifficulty()} + PST`
-                ) : botType === "minimax-v1" ? (
-                  "Depth 2 Minimax"
-                ) : (
-                  "Plays randomly"
-                )}
-              </span>
-            </div>
-          </div>
-          {isBotThinking ? (
-            <span className="flex items-center gap-1.5 text-blue-400 font-medium animate-pulse">
-              <span className="w-2 h-2 rounded-full bg-blue-500"></span>
-              {botType === "human-like" ? "Thinking..." : "Calculating..."}
-            </span>
-          ) : calcTimeMs !== null ? (
-            <span className="text-slate-400 font-mono text-[11px] flex items-center gap-1">
-              <Zap className="w-3 h-3 text-amber-400" />
-              {calcTimeMs}ms
-            </span>
-          ) : null}
-        </div>
-
-        {/* Board Component */}
-        <div className="w-full aspect-square bg-slate-900 border-x border-slate-800 p-2 shadow-2xl relative">
-          <Chessboard
-            options={{
-              position: fen,
-              boardOrientation: boardOrientation,
-              onPieceDrop: onPieceDrop,
-              darkSquareStyle: { backgroundColor: "#334155" },
-              lightSquareStyle: { backgroundColor: "#cbd5e1" },
-              dropSquareStyle: {
-                boxShadow: "inset 0 0 1px 4px #3b82f6",
-              },
-            }}
-          />
-        </div>
-
-        {/* Player Info Bar */}
-        <div className="w-full flex items-center justify-between px-3 py-2 bg-slate-900 border border-slate-800 rounded-b-xl text-xs text-slate-300">
-          <div className="flex items-center gap-2">
-            <div className="p-1.5 rounded-lg bg-slate-800 text-emerald-400">
-              <User className="w-4 h-4" />
-            </div>
-            <div>
-              <span className="font-semibold text-slate-100">You (White)</span>
-              <span className="ml-2 text-slate-500">Student Developer</span>
-            </div>
-          </div>
-          {!isBotThinking && !isGameOver && (
-            <span className="flex items-center gap-1.5 text-emerald-400 font-medium">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
-              Your turn
-            </span>
-          )}
-        </div>
-      </div>
-
-      {/* Right Column: Controls & Bot Personality */}
-      <div className="w-full lg:w-80 flex flex-col gap-4">
-        {/* Opponent Selector */}
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-lg space-y-3">
-          <span className="text-xs uppercase font-semibold text-slate-400 tracking-wider flex items-center gap-1.5">
-            <Cpu className="w-3.5 h-3.5 text-blue-400" />
-            Select Bot Opponent
-          </span>
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              onClick={() => setBotType("human-like")}
-              className={`py-2 px-2.5 rounded-lg text-xs font-medium border transition-all text-left flex flex-col cursor-pointer ${
-                botType === "human-like"
-                  ? "bg-amber-500/15 border-amber-500 text-amber-300 shadow-sm"
-                  : "bg-slate-950/40 border-slate-800 text-slate-400 hover:text-slate-200"
-              }`}
-            >
-              <span className="font-semibold text-slate-100 flex items-center gap-1">
-                <Smile className="w-3.5 h-3.5 text-amber-400" />
-                Human-Like
-              </span>
-              <span className="text-[10px] text-slate-400 mt-0.5">Adaptive Sparring</span>
-            </button>
-
-            <button
-              onClick={() => setBotType("smart-v2")}
-              className={`py-2 px-2.5 rounded-lg text-xs font-medium border transition-all text-left flex flex-col cursor-pointer ${
-                botType === "smart-v2"
-                  ? "bg-blue-600/20 border-blue-500 text-blue-300 shadow-sm"
-                  : "bg-slate-950/40 border-slate-800 text-slate-400 hover:text-slate-200"
-              }`}
-            >
-              <span className="font-semibold text-slate-100 flex items-center gap-1">
-                <Zap className="w-3.5 h-3.5 text-blue-400" />
-                Smart v2
-              </span>
-              <span className="text-[10px] text-slate-400 mt-0.5">Alpha-Beta (Pure)</span>
-            </button>
-
-            <button
-              onClick={() => setBotType("minimax-v1")}
-              className={`py-2 px-2.5 rounded-lg text-xs font-medium border transition-all text-left flex flex-col cursor-pointer ${
-                botType === "minimax-v1"
-                  ? "bg-blue-600/20 border-blue-500 text-blue-300 shadow-sm"
-                  : "bg-slate-950/40 border-slate-800 text-slate-400 hover:text-slate-200"
-              }`}
-            >
-              <span className="font-semibold text-slate-100">Bot v1</span>
-              <span className="text-[10px] text-slate-400 mt-0.5">Depth 2 Minimax</span>
-            </button>
-
-            <button
-              onClick={() => setBotType("random")}
-              className={`py-2 px-2.5 rounded-lg text-xs font-medium border transition-all text-left flex flex-col cursor-pointer ${
-                botType === "random"
-                  ? "bg-blue-600/20 border-blue-500 text-blue-300 shadow-sm"
-                  : "bg-slate-950/40 border-slate-800 text-slate-400 hover:text-slate-200"
-              }`}
-            >
-              <span className="font-semibold text-slate-100">Random Bot</span>
-              <span className="text-[10px] text-slate-400 mt-0.5">Phase 1 Baseline</span>
-            </button>
-          </div>
-
-          {/* Adaptive Mode Toggle */}
-          {botType === "human-like" && (
-            <div className="pt-2.5 border-t border-slate-800/80 flex items-center justify-between">
               <div>
-                <span className="text-xs font-medium text-slate-200 flex items-center gap-1">
-                  <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                  Adaptive Level Tuning
-                </span>
-                <span className="text-[10px] text-slate-500 block">
-                  Autotunes difficulty based on match score
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold text-slate-100">
+                    {botType === "human-like"
+                      ? "Alex (Human-Like Bot)"
+                      : botType === "smart-v2"
+                      ? `Smart Bot v2 (${difficulty.toUpperCase()})`
+                      : botType === "minimax-v1"
+                      ? "Bot v1 (Minimax)"
+                      : "Random Bot"}
+                  </span>
+                  {botType === "human-like" && (
+                    <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 font-mono">
+                      ~{simulatedRating} ELO
+                    </span>
+                  )}
+                </div>
+                <span className="text-[11px] text-slate-500 flex items-center gap-1.5 mt-0.5">
+                  {botType === "human-like" ? (
+                    <>
+                      <span>Mood: <strong className="text-slate-300">{simulatedMood}</strong></span>
+                      <span>•</span>
+                      <span className="text-slate-400">{adaptiveNote}</span>
+                    </>
+                  ) : botType === "smart-v2" ? (
+                    `Alpha-Beta Depth ${getDepthForDifficulty()} + PST`
+                  ) : botType === "minimax-v1" ? (
+                    "Depth 2 Minimax"
+                  ) : (
+                    "Plays randomly"
+                  )}
                 </span>
               </div>
+            </div>
+            {isBotThinking ? (
+              <span className="flex items-center gap-1.5 text-blue-400 font-medium animate-pulse">
+                <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+                {botType === "human-like" ? "Thinking..." : "Calculating..."}
+              </span>
+            ) : calcTimeMs !== null ? (
+              <span className="text-slate-400 font-mono text-[11px] flex items-center gap-1">
+                <Zap className="w-3 h-3 text-amber-400" />
+                {calcTimeMs}ms
+              </span>
+            ) : null}
+          </div>
+
+          {/* Board Component */}
+          <div className="w-full aspect-square bg-slate-900 border-x border-slate-800 p-2 shadow-2xl relative">
+            <Chessboard
+              options={{
+                position: fen,
+                boardOrientation: boardOrientation,
+                onPieceDrop: onPieceDrop,
+                darkSquareStyle: { backgroundColor: "#334155" },
+                lightSquareStyle: { backgroundColor: "#cbd5e1" },
+                dropSquareStyle: {
+                  boxShadow: "inset 0 0 1px 4px #3b82f6",
+                },
+              }}
+            />
+          </div>
+
+          {/* Player Info Bar */}
+          <div className="w-full flex items-center justify-between px-3 py-2 bg-slate-900 border border-slate-800 rounded-b-xl text-xs text-slate-300">
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 rounded-lg bg-slate-800 text-emerald-400">
+                <User className="w-4 h-4" />
+              </div>
+              <div>
+                <span className="font-semibold text-slate-100">You (White)</span>
+                <span className="ml-2 text-slate-500">Student Developer</span>
+              </div>
+            </div>
+            {!isBotThinking && !isGameOver && (
+              <span className="flex items-center gap-1.5 text-emerald-400 font-medium">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
+                Your turn
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Right Column: Controls & Mistake Coach */}
+        <div className="w-full lg:w-80 flex flex-col gap-4">
+          {/* Mistake Coach Card (Phase 5 Feature) */}
+          <div className="bg-gradient-to-br from-amber-950/30 to-slate-900 border border-amber-500/30 rounded-xl p-4 shadow-lg space-y-2.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs uppercase font-bold text-amber-400 tracking-wider flex items-center gap-1.5">
+                <Lightbulb className="w-4 h-4 text-amber-400" />
+                Mistake Coach AI
+              </span>
+              <span className="text-[10px] bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded-full font-semibold">
+                Phase 5
+              </span>
+            </div>
+
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Analyzes your game move-by-move, finds your <strong>top 3 blunders</strong>, and explains them in simple words.
+            </p>
+
+            <button
+              onClick={handleRunMistakeCoach}
+              disabled={moveHistory.length < 2 || isAnalyzing}
+              className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-white font-semibold text-xs transition-all shadow-md cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-white" />
+              {isAnalyzing ? "Analyzing Mistakes..." : "Review Mistakes with Coach"}
+            </button>
+          </div>
+
+          {/* Opponent Selector */}
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-lg space-y-3">
+            <span className="text-xs uppercase font-semibold text-slate-400 tracking-wider flex items-center gap-1.5">
+              <Cpu className="w-3.5 h-3.5 text-blue-400" />
+              Select Bot Opponent
+            </span>
+            <div className="grid grid-cols-2 gap-2">
               <button
-                onClick={() => setIsAdaptiveEnabled((prev) => !prev)}
-                className={`w-10 h-5 flex items-center rounded-full p-0.5 cursor-pointer transition-colors ${
-                  isAdaptiveEnabled ? "bg-amber-500" : "bg-slate-800"
+                onClick={() => setBotType("human-like")}
+                className={`py-2 px-2.5 rounded-lg text-xs font-medium border transition-all text-left flex flex-col cursor-pointer ${
+                  botType === "human-like"
+                    ? "bg-amber-500/15 border-amber-500 text-amber-300 shadow-sm"
+                    : "bg-slate-950/40 border-slate-800 text-slate-400 hover:text-slate-200"
                 }`}
               >
-                <div
-                  className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${
-                    isAdaptiveEnabled ? "translate-x-5" : "translate-x-0"
-                  }`}
-                />
+                <span className="font-semibold text-slate-100 flex items-center gap-1">
+                  <Smile className="w-3.5 h-3.5 text-amber-400" />
+                  Human-Like
+                </span>
+                <span className="text-[10px] text-slate-400 mt-0.5">Adaptive Sparring</span>
+              </button>
+
+              <button
+                onClick={() => setBotType("smart-v2")}
+                className={`py-2 px-2.5 rounded-lg text-xs font-medium border transition-all text-left flex flex-col cursor-pointer ${
+                  botType === "smart-v2"
+                    ? "bg-blue-600/20 border-blue-500 text-blue-300 shadow-sm"
+                    : "bg-slate-950/40 border-slate-800 text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                <span className="font-semibold text-slate-100 flex items-center gap-1">
+                  <Zap className="w-3.5 h-3.5 text-blue-400" />
+                  Smart v2
+                </span>
+                <span className="text-[10px] text-slate-400 mt-0.5">Alpha-Beta (Pure)</span>
+              </button>
+
+              <button
+                onClick={() => setBotType("minimax-v1")}
+                className={`py-2 px-2.5 rounded-lg text-xs font-medium border transition-all text-left flex flex-col cursor-pointer ${
+                  botType === "minimax-v1"
+                    ? "bg-blue-600/20 border-blue-500 text-blue-300 shadow-sm"
+                    : "bg-slate-950/40 border-slate-800 text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                <span className="font-semibold text-slate-100">Bot v1</span>
+                <span className="text-[10px] text-slate-400 mt-0.5">Depth 2 Minimax</span>
+              </button>
+
+              <button
+                onClick={() => setBotType("random")}
+                className={`py-2 px-2.5 rounded-lg text-xs font-medium border transition-all text-left flex flex-col cursor-pointer ${
+                  botType === "random"
+                    ? "bg-blue-600/20 border-blue-500 text-blue-300 shadow-sm"
+                    : "bg-slate-950/40 border-slate-800 text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                <span className="font-semibold text-slate-100">Random Bot</span>
+                <span className="text-[10px] text-slate-400 mt-0.5">Phase 1 Baseline</span>
               </button>
             </div>
-          )}
 
-          {/* Difficulty Selection */}
-          {botType === "smart-v2" && (
-            <div className="pt-2 border-t border-slate-800/80">
-              <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block mb-1.5">
-                Difficulty Level
-              </span>
-              <div className="grid grid-cols-3 gap-1.5">
-                {(["easy", "medium", "hard"] as DifficultyLevel[]).map((level) => (
-                  <button
-                    key={level}
-                    onClick={() => setDifficulty(level)}
-                    className={`py-1 px-2 rounded-md text-xs font-medium border capitalize transition-all cursor-pointer ${
-                      difficulty === level
-                        ? "bg-emerald-500/20 border-emerald-500 text-emerald-300 font-semibold"
-                        : "bg-slate-950/40 border-slate-800 text-slate-400 hover:text-slate-200"
-                    }`}
-                  >
-                    {level}
-                    <span className="text-[9px] block text-slate-500 font-normal">
-                      Depth {level === "easy" ? 2 : level === "medium" ? 3 : 4}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Game Status & Evaluation */}
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-lg">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs uppercase font-semibold text-slate-400 tracking-wider">
-              Game Status
-            </span>
-            <span
-              className={`text-xs px-2 py-0.5 rounded-full font-mono font-medium ${
-                currentEval === 0
-                  ? "bg-slate-800 text-slate-300"
-                  : currentEval > 0
-                  ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
-                  : "bg-blue-500/10 text-blue-400 border border-blue-500/20"
-              }`}
-            >
-              {evalLabel}
-            </span>
-          </div>
-          <div className="mt-1 flex items-center gap-2">
-            {isGameOver ? (
-              <Trophy className="w-5 h-5 text-amber-400 flex-shrink-0" />
-            ) : isInCheck ? (
-              <AlertTriangle className="w-5 h-5 text-rose-400 flex-shrink-0 animate-bounce" />
-            ) : (
-              <Flag className="w-5 h-5 text-blue-400 flex-shrink-0" />
-            )}
-            <p
-              className={`text-sm font-semibold ${
-                isGameOver
-                  ? "text-amber-300"
-                  : isInCheck
-                  ? "text-rose-300"
-                  : "text-slate-100"
-              }`}
-            >
-              {statusMessage}
-            </p>
-          </div>
-
-          {/* Telemetry for Smart v2 */}
-          {botType === "smart-v2" && nodesSearched !== null && (
-            <div className="mt-3 pt-3 border-t border-slate-800/80 grid grid-cols-2 gap-2 text-[11px] font-mono text-slate-400">
-              <div className="flex items-center gap-1.5">
-                <Activity className="w-3 h-3 text-cyan-400" />
-                <span>Nodes: <strong className="text-slate-200">{nodesSearched.toLocaleString()}</strong></span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <Scissors className="w-3 h-3 text-emerald-400" />
-                <span>Pruned: <strong className="text-slate-200">{cutoffsCount?.toLocaleString()}</strong></span>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Action Controls */}
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-lg space-y-2.5">
-          <span className="text-xs uppercase font-semibold text-slate-400 tracking-wider block mb-1">
-            Controls
-          </span>
-
-          <button
-            onClick={handleNewGame}
-            className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium text-xs transition-colors shadow-sm cursor-pointer"
-          >
-            <RefreshCw className="w-3.5 h-3.5" />
-            New Game
-          </button>
-
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              onClick={handleUndo}
-              disabled={moveHistory.length === 0}
-              className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:hover:bg-slate-800 text-slate-200 text-xs font-medium transition-colors cursor-pointer disabled:cursor-not-allowed"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              Undo
-            </button>
-
-            <button
-              onClick={handleFlipBoard}
-              className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium transition-colors cursor-pointer"
-            >
-              <ArrowLeftRight className="w-3.5 h-3.5" />
-              Flip Board
-            </button>
-          </div>
-        </div>
-
-        {/* Move History Log */}
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-lg flex-1 min-h-[170px] flex flex-col">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs uppercase font-semibold text-slate-400 tracking-wider">
-              Move History
-            </span>
-            <span className="text-xs text-slate-500">{moveHistory.length} moves</span>
-          </div>
-
-          <div className="flex-1 overflow-y-auto max-h-[180px] pr-1 space-y-1 font-mono text-xs">
-            {formattedHistory.length === 0 ? (
-              <p className="text-slate-600 italic py-4 text-center">No moves yet. Make your first move!</p>
-            ) : (
-              formattedHistory.map((item) => (
-                <div
-                  key={item.turnNumber}
-                  className="flex items-center justify-between px-2 py-1 rounded bg-slate-950/40 text-slate-300"
-                >
-                  <span className="text-slate-500 w-8">{item.turnNumber}.</span>
-                  <span className="flex-1 text-slate-200">{item.white}</span>
-                  <span className="flex-1 text-slate-400">{item.black}</span>
+            {/* Adaptive Mode Toggle */}
+            {botType === "human-like" && (
+              <div className="pt-2.5 border-t border-slate-800/80 flex items-center justify-between">
+                <div>
+                  <span className="text-xs font-medium text-slate-200 flex items-center gap-1">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                    Adaptive Level Tuning
+                  </span>
+                  <span className="text-[10px] text-slate-500 block">
+                    Autotunes difficulty based on match score
+                  </span>
                 </div>
-              ))
+                <button
+                  onClick={() => setIsAdaptiveEnabled((prev) => !prev)}
+                  className={`w-10 h-5 flex items-center rounded-full p-0.5 cursor-pointer transition-colors ${
+                    isAdaptiveEnabled ? "bg-amber-500" : "bg-slate-800"
+                  }`}
+                >
+                  <div
+                    className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${
+                      isAdaptiveEnabled ? "translate-x-5" : "translate-x-0"
+                    }`}
+                  />
+                </button>
+              </div>
             )}
+
+            {/* Difficulty Selection */}
+            {botType === "smart-v2" && (
+              <div className="pt-2 border-t border-slate-800/80">
+                <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block mb-1.5">
+                  Difficulty Level
+                </span>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {(["easy", "medium", "hard"] as DifficultyLevel[]).map((level) => (
+                    <button
+                      key={level}
+                      onClick={() => setDifficulty(level)}
+                      className={`py-1 px-2 rounded-md text-xs font-medium border capitalize transition-all cursor-pointer ${
+                        difficulty === level
+                          ? "bg-emerald-500/20 border-emerald-500 text-emerald-300 font-semibold"
+                          : "bg-slate-950/40 border-slate-800 text-slate-400 hover:text-slate-200"
+                      }`}
+                    >
+                      {level}
+                      <span className="text-[9px] block text-slate-500 font-normal">
+                        Depth {level === "easy" ? 2 : level === "medium" ? 3 : 4}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Game Status & Evaluation */}
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-lg">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs uppercase font-semibold text-slate-400 tracking-wider">
+                Game Status
+              </span>
+              <span
+                className={`text-xs px-2 py-0.5 rounded-full font-mono font-medium ${
+                  currentEval === 0
+                    ? "bg-slate-800 text-slate-300"
+                    : currentEval > 0
+                    ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                    : "bg-blue-500/10 text-blue-400 border border-blue-500/20"
+                }`}
+              >
+                {evalLabel}
+              </span>
+            </div>
+            <div className="mt-1 flex items-center gap-2">
+              {isGameOver ? (
+                <Trophy className="w-5 h-5 text-amber-400 flex-shrink-0" />
+              ) : isInCheck ? (
+                <AlertTriangle className="w-5 h-5 text-rose-400 flex-shrink-0 animate-bounce" />
+              ) : (
+                <Flag className="w-5 h-5 text-blue-400 flex-shrink-0" />
+              )}
+              <p
+                className={`text-sm font-semibold ${
+                  isGameOver
+                    ? "text-amber-300"
+                    : isInCheck
+                    ? "text-rose-300"
+                    : "text-slate-100"
+                }`}
+              >
+                {statusMessage}
+              </p>
+            </div>
+
+            {/* Telemetry for Smart v2 */}
+            {botType === "smart-v2" && nodesSearched !== null && (
+              <div className="mt-3 pt-3 border-t border-slate-800/80 grid grid-cols-2 gap-2 text-[11px] font-mono text-slate-400">
+                <div className="flex items-center gap-1.5">
+                  <Activity className="w-3 h-3 text-cyan-400" />
+                  <span>Nodes: <strong className="text-slate-200">{nodesSearched.toLocaleString()}</strong></span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <Scissors className="w-3 h-3 text-emerald-400" />
+                  <span>Pruned: <strong className="text-slate-200">{cutoffsCount?.toLocaleString()}</strong></span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Action Controls */}
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-lg space-y-2.5">
+            <span className="text-xs uppercase font-semibold text-slate-400 tracking-wider block mb-1">
+              Controls
+            </span>
+
+            <button
+              onClick={handleNewGame}
+              className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium text-xs transition-colors shadow-sm cursor-pointer"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              New Game
+            </button>
+
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={handleUndo}
+                disabled={moveHistory.length === 0}
+                className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:hover:bg-slate-800 text-slate-200 text-xs font-medium transition-colors cursor-pointer disabled:cursor-not-allowed"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                Undo
+              </button>
+
+              <button
+                onClick={handleFlipBoard}
+                className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium transition-colors cursor-pointer"
+              >
+                <ArrowLeftRight className="w-3.5 h-3.5" />
+                Flip Board
+              </button>
+            </div>
+          </div>
+
+          {/* Move History Log */}
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-lg flex-1 min-h-[170px] flex flex-col">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs uppercase font-semibold text-slate-400 tracking-wider">
+                Move History
+              </span>
+              <span className="text-xs text-slate-500">{moveHistory.length} moves</span>
+            </div>
+
+            <div className="flex-1 overflow-y-auto max-h-[180px] pr-1 space-y-1 font-mono text-xs">
+              {formattedHistory.length === 0 ? (
+                <p className="text-slate-600 italic py-4 text-center">No moves yet. Make your first move!</p>
+              ) : (
+                formattedHistory.map((item) => (
+                  <div
+                    key={item.turnNumber}
+                    className="flex items-center justify-between px-2 py-1 rounded bg-slate-950/40 text-slate-300"
+                  >
+                    <span className="text-slate-500 w-8">{item.turnNumber}.</span>
+                    <span className="flex-1 text-slate-200">{item.white}</span>
+                    <span className="flex-1 text-slate-400">{item.black}</span>
+                  </div>
+                ))
+              )}
+            </div>
           </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }

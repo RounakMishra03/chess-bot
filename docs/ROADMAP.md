@@ -115,7 +115,7 @@ Most chess engines (like Stockfish) play either perfectly or unnaturally robotic
 
 ---
 
-### Phase 5: Mistake Coach
+### Phase 5: Mistake Coach (Completed)
 * **Goal**: Add a post-game review system powered by Stockfish WASM that highlights the player's 3 biggest mistakes and explains them in simple words.
 * **Steps**:
   1. Integrate Stockfish WASM into a background review worker.
@@ -125,9 +125,9 @@ Most chess engines (like Stockfish) play either perfectly or unnaturally robotic
   5. Highlight the blunder and the recommended move on an interactive review board.
   6. Provide plain-English coaching explanations (with optional LLM integration for personalized advice).
 * **Done When**:
-  - [ ] Post-game report generates automatically within 5-10 seconds of game completion.
-  - [ ] Top 3 blunders are clearly displayed on a review timeline with visual board arrows/highlights.
-  - [ ] Every blunder includes a friendly explanation of why the move failed and what should have been played.
+  - [x] Post-game report generates automatically within 5-10 seconds of game completion.
+  - [x] Top 3 blunders are clearly displayed on a review timeline with visual board arrows/highlights.
+  - [x] Every blunder includes a friendly explanation of why the move failed and what should have been played.
 
 ---
 
