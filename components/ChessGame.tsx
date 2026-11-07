@@ -6,6 +6,8 @@ import { Chessboard } from "react-chessboard";
 import { getRandomMove } from "@/lib/engine/randomBot";
 import { getMinimaxMove } from "@/lib/engine/minimax";
 import { getSmartBotMove } from "@/lib/engine/alphaBeta";
+import { getHumanLikeMove } from "@/lib/engine/humanBot";
+import { calculateAdaptiveRating } from "@/lib/engine/adaptive";
 import { evaluateBoard } from "@/lib/engine/evaluate";
 import { BotType, DifficultyLevel } from "@/types/chess";
 import {
@@ -21,6 +23,9 @@ import {
   Zap,
   Activity,
   Scissors,
+  Sparkles,
+  Smile,
+  ShieldAlert,
 } from "lucide-react";
 
 export default function ChessGame() {
@@ -31,8 +36,9 @@ export default function ChessGame() {
   // Core Game State
   const [fen, setFen] = useState<string>(gameRef.current.fen());
   const [boardOrientation, setBoardOrientation] = useState<"white" | "black">("white");
-  const [botType, setBotType] = useState<BotType>("smart-v2");
+  const [botType, setBotType] = useState<BotType>("human-like");
   const [difficulty, setDifficulty] = useState<DifficultyLevel>("medium");
+  const [isAdaptiveEnabled, setIsAdaptiveEnabled] = useState<boolean>(true);
   const [isBotThinking, setIsBotThinking] = useState<boolean>(false);
   const [statusMessage, setStatusMessage] = useState<string>("Your turn (White)");
   const [isGameOver, setIsGameOver] = useState<boolean>(false);
@@ -40,7 +46,12 @@ export default function ChessGame() {
   const [moveHistory, setMoveHistory] = useState<string[]>([]);
   const [currentEval, setCurrentEval] = useState<number>(0);
 
-  // Engine Performance Metrics
+  // Human-Like & Adaptive State
+  const [simulatedRating, setSimulatedRating] = useState<number>(1200);
+  const [simulatedMood, setSimulatedMood] = useState<string>("Focused");
+  const [adaptiveNote, setAdaptiveNote] = useState<string>("Playing at target level");
+
+  // Performance Telemetry
   const [calcTimeMs, setCalcTimeMs] = useState<number | null>(null);
   const [nodesSearched, setNodesSearched] = useState<number | null>(null);
   const [cutoffsCount, setCutoffsCount] = useState<number | null>(null);
@@ -55,10 +66,19 @@ export default function ChessGame() {
     const score = evaluateBoard(game);
     setCurrentEval(score);
 
+    // Update adaptive rating based on new evaluation
+    if (isAdaptiveEnabled) {
+      const base = difficulty === "easy" ? 1000 : difficulty === "medium" ? 1200 : 1500;
+      const { targetRating, adaptiveNote: note } = calculateAdaptiveRating(base, score);
+      setSimulatedRating(targetRating);
+      setAdaptiveNote(note);
+    }
+
     if (game.isCheckmate()) {
       setIsGameOver(true);
       const winner = game.turn() === "w" ? "Black (Bot)" : "White (You)";
       setStatusMessage(`Checkmate! ${winner} wins! 🏆`);
+      setSimulatedMood(game.turn() === "w" ? "Triumphant" : "Defeated");
     } else if (game.isDraw()) {
       setIsGameOver(true);
       if (game.isStalemate()) {
@@ -70,6 +90,7 @@ export default function ChessGame() {
       } else {
         setStatusMessage("Game Draw (50-move rule)!");
       }
+      setSimulatedMood("Balanced");
     } else if (inCheck) {
       const activePlayer = game.turn() === "w" ? "You (White)" : "Bot (Black)";
       setStatusMessage(`Check! ${activePlayer} is in check! ⚠️`);
@@ -77,21 +98,22 @@ export default function ChessGame() {
       const activePlayer = game.turn() === "w" ? "Your turn (White)" : "Bot's turn (Black)";
       setStatusMessage(activePlayer);
     }
-  }, []);
+  }, [isAdaptiveEnabled, difficulty]);
 
   // Applies the calculated bot move to the real board
   const applyBotMove = useCallback(
     (
       chosenMove: Move | null,
-      score: number,
       nodes?: number,
       cutoffs?: number,
-      executionTime?: number
+      executionTime?: number,
+      persona?: string
     ) => {
       const game = gameRef.current;
       if (nodes !== undefined) setNodesSearched(nodes);
       if (cutoffs !== undefined) setCutoffsCount(cutoffs);
       if (executionTime !== undefined) setCalcTimeMs(executionTime);
+      if (persona) setSimulatedMood(persona);
 
       if (chosenMove) {
         try {
@@ -108,26 +130,41 @@ export default function ChessGame() {
     [updateGameStatus]
   );
 
-  // Initialize background Web Worker
+  // Initialize Web Worker
   useEffect(() => {
     setIsMounted(true);
 
     try {
-      // Create Web Worker for non-blocking engine calculation
       const worker = new Worker(
         new URL("../workers/engine.worker.ts", import.meta.url)
       );
 
       worker.onmessage = (event: MessageEvent) => {
-        if (event.data.type === "MOVE_CALCULATED") {
-          const { move, score, nodesSearched, cutoffs, executionTime } = event.data;
-          applyBotMove(move, score, nodesSearched, cutoffs, executionTime);
+        const data = event.data;
+        if (data.type === "HUMAN_MOVE_CALCULATED") {
+          // Delay applying the move by the simulated human thinking time
+          botTimeoutRef.current = setTimeout(() => {
+            applyBotMove(
+              data.move,
+              undefined,
+              undefined,
+              data.thinkingDelayMs,
+              data.simulatedPersona
+            );
+          }, data.thinkingDelayMs);
+        } else if (data.type === "MOVE_CALCULATED") {
+          applyBotMove(
+            data.move,
+            data.nodesSearched,
+            data.cutoffs,
+            data.executionTime
+          );
         }
       };
 
       workerRef.current = worker;
     } catch {
-      console.warn("Web worker initialization skipped or unsupported in environment.");
+      console.warn("Web worker not available in current environment.");
     }
 
     return () => {
@@ -135,7 +172,6 @@ export default function ChessGame() {
     };
   }, [applyBotMove]);
 
-  // Convert difficulty to search depth
   const getDepthForDifficulty = useCallback((): number => {
     switch (difficulty) {
       case "easy":
@@ -149,26 +185,41 @@ export default function ChessGame() {
     }
   }, [difficulty]);
 
-  // Bot move logic: Web Worker with fallback
+  // Bot move logic
   const triggerBotMove = useCallback(() => {
     const game = gameRef.current;
     if (game.isGameOver() || game.turn() !== "b") return;
 
     setIsBotThinking(true);
 
-    botTimeoutRef.current = setTimeout(() => {
-      const depth = getDepthForDifficulty();
-
-      if (botType === "random") {
-        const move = getRandomMove(game);
-        applyBotMove(move, evaluateBoard(game), 1, 0, 1);
-      } else if (botType === "minimax-v1") {
-        const start = performance.now();
-        const result = getMinimaxMove(game, 2);
-        const elapsed = Math.round(performance.now() - start);
-        applyBotMove(result.move, result.score, undefined, undefined, elapsed);
+    if (botType === "human-like") {
+      // Human-Like Bot: Organic delays & adaptive inaccuracies
+      if (workerRef.current) {
+        workerRef.current.postMessage({
+          type: "CALCULATE_HUMAN_MOVE",
+          fen: game.fen(),
+          ratingLevel: simulatedRating,
+          allowBlindSpots: true,
+        });
       } else {
-        // Smart Bot v2: Try Web Worker first, fallback to synchronous alpha-beta
+        const result = getHumanLikeMove(game, {
+          ratingLevel: simulatedRating,
+          allowBlindSpots: true,
+        });
+        botTimeoutRef.current = setTimeout(() => {
+          applyBotMove(
+            result.move,
+            undefined,
+            undefined,
+            result.thinkingDelayMs,
+            result.simulatedPersona
+          );
+        }, result.thinkingDelayMs);
+      }
+    } else if (botType === "smart-v2") {
+      // Pure Alpha-Beta Bot v2
+      botTimeoutRef.current = setTimeout(() => {
+        const depth = getDepthForDifficulty();
         if (workerRef.current) {
           workerRef.current.postMessage({
             type: "CALCULATE_MOVE",
@@ -181,15 +232,28 @@ export default function ChessGame() {
           const elapsed = Math.round(performance.now() - start);
           applyBotMove(
             result.move,
-            result.score,
             result.nodesSearched,
             result.cutoffs,
             elapsed
           );
         }
-      }
-    }, 300);
-  }, [botType, getDepthForDifficulty, applyBotMove]);
+      }, 300);
+    } else if (botType === "minimax-v1") {
+      // Bot v1: Fixed Minimax depth 2
+      botTimeoutRef.current = setTimeout(() => {
+        const start = performance.now();
+        const result = getMinimaxMove(game, 2);
+        const elapsed = Math.round(performance.now() - start);
+        applyBotMove(result.move, undefined, undefined, elapsed);
+      }, 350);
+    } else {
+      // Random Bot
+      botTimeoutRef.current = setTimeout(() => {
+        const move = getRandomMove(game);
+        applyBotMove(move, 1, 0, 1);
+      }, 400);
+    }
+  }, [botType, simulatedRating, getDepthForDifficulty, applyBotMove]);
 
   // Handle player drag & drop
   const onPieceDrop = useCallback(
@@ -245,6 +309,7 @@ export default function ChessGame() {
     setCalcTimeMs(null);
     setNodesSearched(null);
     setCutoffsCount(null);
+    setSimulatedMood("Focused");
     setStatusMessage("Your turn (White)");
   }, []);
 
@@ -314,30 +379,46 @@ export default function ChessGame() {
               <Bot className="w-4 h-4" />
             </div>
             <div>
-              <span className="font-semibold text-slate-100">
-                {botType === "smart-v2"
-                  ? `Smart Bot v2 (${difficulty.toUpperCase()})`
-                  : botType === "minimax-v1"
-                  ? "Bot v1 (Minimax)"
-                  : "Random Bot"}{" "}
-                <span className="text-slate-400 font-normal">(Black)</span>
-              </span>
-              <span className="ml-2 text-slate-500">
-                {botType === "smart-v2"
-                  ? `Alpha-Beta Depth ${getDepthForDifficulty()} + PST`
-                  : botType === "minimax-v1"
-                  ? "Depth 2 Minimax"
-                  : "Plays randomly"}
+              <div className="flex items-center gap-2">
+                <span className="font-semibold text-slate-100">
+                  {botType === "human-like"
+                    ? "Alex (Human-Like Bot)"
+                    : botType === "smart-v2"
+                    ? `Smart Bot v2 (${difficulty.toUpperCase()})`
+                    : botType === "minimax-v1"
+                    ? "Bot v1 (Minimax)"
+                    : "Random Bot"}
+                </span>
+                {botType === "human-like" && (
+                  <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 font-mono">
+                    ~{simulatedRating} ELO
+                  </span>
+                )}
+              </div>
+              <span className="text-[11px] text-slate-500 flex items-center gap-1.5 mt-0.5">
+                {botType === "human-like" ? (
+                  <>
+                    <span>Mood: <strong className="text-slate-300">{simulatedMood}</strong></span>
+                    <span>•</span>
+                    <span className="text-slate-400">{adaptiveNote}</span>
+                  </>
+                ) : botType === "smart-v2" ? (
+                  `Alpha-Beta Depth ${getDepthForDifficulty()} + PST`
+                ) : botType === "minimax-v1" ? (
+                  "Depth 2 Minimax"
+                ) : (
+                  "Plays randomly"
+                )}
               </span>
             </div>
           </div>
           {isBotThinking ? (
             <span className="flex items-center gap-1.5 text-blue-400 font-medium animate-pulse">
               <span className="w-2 h-2 rounded-full bg-blue-500"></span>
-              Thinking (Worker)...
+              {botType === "human-like" ? "Thinking..." : "Calculating..."}
             </span>
           ) : calcTimeMs !== null ? (
-            <span className="text-slate-400 font-mono text-[11px] flex items-center gap-1.5">
+            <span className="text-slate-400 font-mono text-[11px] flex items-center gap-1">
               <Zap className="w-3 h-3 text-amber-400" />
               {calcTimeMs}ms
             </span>
@@ -380,55 +461,98 @@ export default function ChessGame() {
         </div>
       </div>
 
-      {/* Right Column: Controls & Engine Insights */}
+      {/* Right Column: Controls & Bot Personality */}
       <div className="w-full lg:w-80 flex flex-col gap-4">
-        {/* Opponent & Engine Selector */}
+        {/* Opponent Selector */}
         <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-lg space-y-3">
-          <div>
-            <span className="text-xs uppercase font-semibold text-slate-400 tracking-wider flex items-center gap-1.5 mb-2">
-              <Cpu className="w-3.5 h-3.5 text-blue-400" />
-              Select Bot Opponent
-            </span>
-            <div className="grid grid-cols-3 gap-1.5">
-              <button
-                onClick={() => setBotType("smart-v2")}
-                className={`py-1.5 px-2 rounded-lg text-xs font-medium border transition-all text-center flex flex-col items-center cursor-pointer ${
-                  botType === "smart-v2"
-                    ? "bg-blue-600/20 border-blue-500 text-blue-300 shadow-sm"
-                    : "bg-slate-950/40 border-slate-800 text-slate-400 hover:text-slate-200"
-                }`}
-              >
-                <span className="font-semibold text-slate-100">Smart v2</span>
-                <span className="text-[9px] text-slate-400">Alpha-Beta</span>
-              </button>
+          <span className="text-xs uppercase font-semibold text-slate-400 tracking-wider flex items-center gap-1.5">
+            <Cpu className="w-3.5 h-3.5 text-blue-400" />
+            Select Bot Opponent
+          </span>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              onClick={() => setBotType("human-like")}
+              className={`py-2 px-2.5 rounded-lg text-xs font-medium border transition-all text-left flex flex-col cursor-pointer ${
+                botType === "human-like"
+                  ? "bg-amber-500/15 border-amber-500 text-amber-300 shadow-sm"
+                  : "bg-slate-950/40 border-slate-800 text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              <span className="font-semibold text-slate-100 flex items-center gap-1">
+                <Smile className="w-3.5 h-3.5 text-amber-400" />
+                Human-Like
+              </span>
+              <span className="text-[10px] text-slate-400 mt-0.5">Adaptive Sparring</span>
+            </button>
 
-              <button
-                onClick={() => setBotType("minimax-v1")}
-                className={`py-1.5 px-2 rounded-lg text-xs font-medium border transition-all text-center flex flex-col items-center cursor-pointer ${
-                  botType === "minimax-v1"
-                    ? "bg-blue-600/20 border-blue-500 text-blue-300 shadow-sm"
-                    : "bg-slate-950/40 border-slate-800 text-slate-400 hover:text-slate-200"
-                }`}
-              >
-                <span className="font-semibold text-slate-100">Bot v1</span>
-                <span className="text-[9px] text-slate-400">Minimax</span>
-              </button>
+            <button
+              onClick={() => setBotType("smart-v2")}
+              className={`py-2 px-2.5 rounded-lg text-xs font-medium border transition-all text-left flex flex-col cursor-pointer ${
+                botType === "smart-v2"
+                  ? "bg-blue-600/20 border-blue-500 text-blue-300 shadow-sm"
+                  : "bg-slate-950/40 border-slate-800 text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              <span className="font-semibold text-slate-100 flex items-center gap-1">
+                <Zap className="w-3.5 h-3.5 text-blue-400" />
+                Smart v2
+              </span>
+              <span className="text-[10px] text-slate-400 mt-0.5">Alpha-Beta (Pure)</span>
+            </button>
 
-              <button
-                onClick={() => setBotType("random")}
-                className={`py-1.5 px-2 rounded-lg text-xs font-medium border transition-all text-center flex flex-col items-center cursor-pointer ${
-                  botType === "random"
-                    ? "bg-blue-600/20 border-blue-500 text-blue-300 shadow-sm"
-                    : "bg-slate-950/40 border-slate-800 text-slate-400 hover:text-slate-200"
-                }`}
-              >
-                <span className="font-semibold text-slate-100">Random</span>
-                <span className="text-[9px] text-slate-400">Phase 1</span>
-              </button>
-            </div>
+            <button
+              onClick={() => setBotType("minimax-v1")}
+              className={`py-2 px-2.5 rounded-lg text-xs font-medium border transition-all text-left flex flex-col cursor-pointer ${
+                botType === "minimax-v1"
+                  ? "bg-blue-600/20 border-blue-500 text-blue-300 shadow-sm"
+                  : "bg-slate-950/40 border-slate-800 text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              <span className="font-semibold text-slate-100">Bot v1</span>
+              <span className="text-[10px] text-slate-400 mt-0.5">Depth 2 Minimax</span>
+            </button>
+
+            <button
+              onClick={() => setBotType("random")}
+              className={`py-2 px-2.5 rounded-lg text-xs font-medium border transition-all text-left flex flex-col cursor-pointer ${
+                botType === "random"
+                  ? "bg-blue-600/20 border-blue-500 text-blue-300 shadow-sm"
+                  : "bg-slate-950/40 border-slate-800 text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              <span className="font-semibold text-slate-100">Random Bot</span>
+              <span className="text-[10px] text-slate-400 mt-0.5">Phase 1 Baseline</span>
+            </button>
           </div>
 
-          {/* Difficulty Selection (Active when Smart v2 is selected) */}
+          {/* Adaptive Mode Toggle */}
+          {botType === "human-like" && (
+            <div className="pt-2.5 border-t border-slate-800/80 flex items-center justify-between">
+              <div>
+                <span className="text-xs font-medium text-slate-200 flex items-center gap-1">
+                  <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                  Adaptive Level Tuning
+                </span>
+                <span className="text-[10px] text-slate-500 block">
+                  Autotunes difficulty based on match score
+                </span>
+              </div>
+              <button
+                onClick={() => setIsAdaptiveEnabled((prev) => !prev)}
+                className={`w-10 h-5 flex items-center rounded-full p-0.5 cursor-pointer transition-colors ${
+                  isAdaptiveEnabled ? "bg-amber-500" : "bg-slate-800"
+                }`}
+              >
+                <div
+                  className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${
+                    isAdaptiveEnabled ? "translate-x-5" : "translate-x-0"
+                  }`}
+                />
+              </button>
+            </div>
+          )}
+
+          {/* Difficulty Selection */}
           {botType === "smart-v2" && (
             <div className="pt-2 border-t border-slate-800/80">
               <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block mb-1.5">
@@ -456,7 +580,7 @@ export default function ChessGame() {
           )}
         </div>
 
-        {/* Engine Telemetry & Evaluation */}
+        {/* Game Status & Evaluation */}
         <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-lg">
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs uppercase font-semibold text-slate-400 tracking-wider">
@@ -495,7 +619,7 @@ export default function ChessGame() {
             </p>
           </div>
 
-          {/* Real-time search telemetry */}
+          {/* Telemetry for Smart v2 */}
           {botType === "smart-v2" && nodesSearched !== null && (
             <div className="mt-3 pt-3 border-t border-slate-800/80 grid grid-cols-2 gap-2 text-[11px] font-mono text-slate-400">
               <div className="flex items-center gap-1.5">
@@ -545,7 +669,7 @@ export default function ChessGame() {
         </div>
 
         {/* Move History Log */}
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-lg flex-1 min-h-[180px] flex flex-col">
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-lg flex-1 min-h-[170px] flex flex-col">
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs uppercase font-semibold text-slate-400 tracking-wider">
               Move History
@@ -553,7 +677,7 @@ export default function ChessGame() {
             <span className="text-xs text-slate-500">{moveHistory.length} moves</span>
           </div>
 
-          <div className="flex-1 overflow-y-auto max-h-[190px] pr-1 space-y-1 font-mono text-xs">
+          <div className="flex-1 overflow-y-auto max-h-[180px] pr-1 space-y-1 font-mono text-xs">
             {formattedHistory.length === 0 ? (
               <p className="text-slate-600 italic py-4 text-center">No moves yet. Make your first move!</p>
             ) : (

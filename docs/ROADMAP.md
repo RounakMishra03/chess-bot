@@ -101,7 +101,7 @@ Most chess engines (like Stockfish) play either perfectly or unnaturally robotic
 
 ---
 
-### Phase 4: Human-Like Bot
+### Phase 4: Human-Like Bot (Completed)
 * **Goal**: Transform the bot from a mechanical calculator into an opponent that feels human, complete with realistic tendencies, blind spots, and adaptive skill.
 * **Steps**:
   1. Model controlled inaccuracy: introduce small evaluation noise so the bot doesn't always pick the robotic #1 move.
@@ -109,9 +109,9 @@ Most chess engines (like Stockfish) play either perfectly or unnaturally robotic
   3. Add human-like thinking delay (fast moves on obvious recaptures, longer pauses in complex positions).
   4. Create an **Adaptive Difficulty System**: dynamic rating adjustment that tunes difficulty up or down based on recent player moves and score advantage.
 * **Done When**:
-  - [ ] Moves feel organic rather than machine-precise.
-  - [ ] Bot's move timing mimics human reflection speeds.
-  - [ ] A beginner can enjoy close games without being brutally crushed or facing absurd random blunders.
+  - [x] Moves feel organic rather than machine-precise.
+  - [x] Bot's move timing mimics human reflection speeds.
+  - [x] A beginner can enjoy close games without being brutally crushed or facing absurd random blunders.
 
 ---
 
