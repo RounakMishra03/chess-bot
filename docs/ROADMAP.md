@@ -54,7 +54,7 @@ Most chess engines (like Stockfish) play either perfectly or unnaturally robotic
 
 ---
 
-### Phase 1: Playable Board vs. Random Bot
+### Phase 1: Playable Board vs. Random Bot (Completed)
 * **Goal**: Build a fully interactive, responsive chessboard where the user can play full legal games against a bot that picks legal moves at random.
 * **Steps**:
   1. Render `react-chessboard` wired to an active `chess.js` game state.
@@ -63,10 +63,10 @@ Most chess engines (like Stockfish) play either perfectly or unnaturally robotic
   4. Add game state banners: Check, Checkmate, Stalemate, and Draw conditions.
   5. Add essential game controls: **New Game**, **Undo Move**, and **Flip Board**.
 * **Done When**:
-  - [ ] Pieces can be dragged and dropped only to legal squares.
-  - [ ] The random bot automatically responds with a legal move.
-  - [ ] Check and game-over states (checkmate/stalemate/draw) are clearly displayed.
-  - [ ] "New Game", "Undo", and "Flip Board" buttons work seamlessly without errors.
+  - [x] Pieces can be dragged and dropped only to legal squares.
+  - [x] The random bot automatically responds with a legal move.
+  - [x] Check and game-over states (checkmate/stalemate/draw) are clearly displayed.
+  - [x] "New Game", "Undo", and "Flip Board" buttons work seamlessly without errors.
 
 ---
 
