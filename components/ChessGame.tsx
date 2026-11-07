@@ -1,12 +1,13 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { Chess } from "chess.js";
+import { Chess, Move } from "chess.js";
 import { Chessboard } from "react-chessboard";
 import { getRandomMove } from "@/lib/engine/randomBot";
 import { getMinimaxMove } from "@/lib/engine/minimax";
+import { getSmartBotMove } from "@/lib/engine/alphaBeta";
 import { evaluateBoard } from "@/lib/engine/evaluate";
-import { BotType } from "@/types/chess";
+import { BotType, DifficultyLevel } from "@/types/chess";
 import {
   RotateCcw,
   RefreshCw,
@@ -18,30 +19,32 @@ import {
   Flag,
   Cpu,
   Zap,
+  Activity,
+  Scissors,
 } from "lucide-react";
 
 export default function ChessGame() {
-  // Store chess.js game instance in a ref so it persists across renders without unnecessary re-instantiations
   const gameRef = useRef<Chess>(new Chess());
   const botTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const workerRef = useRef<Worker | null>(null);
 
-  // React state to trigger UI re-renders
+  // Core Game State
   const [fen, setFen] = useState<string>(gameRef.current.fen());
   const [boardOrientation, setBoardOrientation] = useState<"white" | "black">("white");
-  const [botType, setBotType] = useState<BotType>("minimax-v1");
+  const [botType, setBotType] = useState<BotType>("smart-v2");
+  const [difficulty, setDifficulty] = useState<DifficultyLevel>("medium");
   const [isBotThinking, setIsBotThinking] = useState<boolean>(false);
   const [statusMessage, setStatusMessage] = useState<string>("Your turn (White)");
   const [isGameOver, setIsGameOver] = useState<boolean>(false);
   const [isInCheck, setIsInCheck] = useState<boolean>(false);
   const [moveHistory, setMoveHistory] = useState<string[]>([]);
   const [currentEval, setCurrentEval] = useState<number>(0);
-  const [calcTimeMs, setCalcTimeMs] = useState<number | null>(null);
-  const [isMounted, setIsMounted] = useState<boolean>(false);
 
-  // Client-side mount check to prevent Next.js hydration mismatch
-  useEffect(() => {
-    setIsMounted(true);
-  }, []);
+  // Engine Performance Metrics
+  const [calcTimeMs, setCalcTimeMs] = useState<number | null>(null);
+  const [nodesSearched, setNodesSearched] = useState<number | null>(null);
+  const [cutoffsCount, setCutoffsCount] = useState<number | null>(null);
+  const [isMounted, setIsMounted] = useState<boolean>(false);
 
   // Updates status messages based on game state
   const updateGameStatus = useCallback(() => {
@@ -49,7 +52,6 @@ export default function ChessGame() {
     const inCheck = game.inCheck();
     setIsInCheck(inCheck);
 
-    // Compute board evaluation score (material balance)
     const score = evaluateBoard(game);
     setCurrentEval(score);
 
@@ -77,28 +79,19 @@ export default function ChessGame() {
     }
   }, []);
 
-  // Bot move logic: switches between Random Bot and Bot v1 (Minimax)
-  const triggerBotMove = useCallback(() => {
-    const game = gameRef.current;
-    if (game.isGameOver() || game.turn() !== "b") return;
-
-    setIsBotThinking(true);
-
-    // Give a realistic 350ms delay so the UI feels responsive rather than instantaneously mechanical
-    botTimeoutRef.current = setTimeout(() => {
-      const startTime = performance.now();
-      let chosenMove = null;
-
-      if (botType === "random") {
-        chosenMove = getRandomMove(game);
-      } else {
-        // Bot v1: Minimax depth 2 (calculates 1 bot move + 1 player counter-move)
-        const minimaxResult = getMinimaxMove(game, 2);
-        chosenMove = minimaxResult.move;
-      }
-
-      const elapsed = Math.round(performance.now() - startTime);
-      setCalcTimeMs(elapsed);
+  // Applies the calculated bot move to the real board
+  const applyBotMove = useCallback(
+    (
+      chosenMove: Move | null,
+      score: number,
+      nodes?: number,
+      cutoffs?: number,
+      executionTime?: number
+    ) => {
+      const game = gameRef.current;
+      if (nodes !== undefined) setNodesSearched(nodes);
+      if (cutoffs !== undefined) setCutoffsCount(cutoffs);
+      if (executionTime !== undefined) setCalcTimeMs(executionTime);
 
       if (chosenMove) {
         try {
@@ -111,8 +104,92 @@ export default function ChessGame() {
         }
       }
       setIsBotThinking(false);
-    }, 350);
-  }, [botType, updateGameStatus]);
+    },
+    [updateGameStatus]
+  );
+
+  // Initialize background Web Worker
+  useEffect(() => {
+    setIsMounted(true);
+
+    try {
+      // Create Web Worker for non-blocking engine calculation
+      const worker = new Worker(
+        new URL("../workers/engine.worker.ts", import.meta.url)
+      );
+
+      worker.onmessage = (event: MessageEvent) => {
+        if (event.data.type === "MOVE_CALCULATED") {
+          const { move, score, nodesSearched, cutoffs, executionTime } = event.data;
+          applyBotMove(move, score, nodesSearched, cutoffs, executionTime);
+        }
+      };
+
+      workerRef.current = worker;
+    } catch {
+      console.warn("Web worker initialization skipped or unsupported in environment.");
+    }
+
+    return () => {
+      workerRef.current?.terminate();
+    };
+  }, [applyBotMove]);
+
+  // Convert difficulty to search depth
+  const getDepthForDifficulty = useCallback((): number => {
+    switch (difficulty) {
+      case "easy":
+        return 2;
+      case "medium":
+        return 3;
+      case "hard":
+        return 4;
+      default:
+        return 3;
+    }
+  }, [difficulty]);
+
+  // Bot move logic: Web Worker with fallback
+  const triggerBotMove = useCallback(() => {
+    const game = gameRef.current;
+    if (game.isGameOver() || game.turn() !== "b") return;
+
+    setIsBotThinking(true);
+
+    botTimeoutRef.current = setTimeout(() => {
+      const depth = getDepthForDifficulty();
+
+      if (botType === "random") {
+        const move = getRandomMove(game);
+        applyBotMove(move, evaluateBoard(game), 1, 0, 1);
+      } else if (botType === "minimax-v1") {
+        const start = performance.now();
+        const result = getMinimaxMove(game, 2);
+        const elapsed = Math.round(performance.now() - start);
+        applyBotMove(result.move, result.score, undefined, undefined, elapsed);
+      } else {
+        // Smart Bot v2: Try Web Worker first, fallback to synchronous alpha-beta
+        if (workerRef.current) {
+          workerRef.current.postMessage({
+            type: "CALCULATE_MOVE",
+            fen: game.fen(),
+            depth,
+          });
+        } else {
+          const start = performance.now();
+          const result = getSmartBotMove(game, depth);
+          const elapsed = Math.round(performance.now() - start);
+          applyBotMove(
+            result.move,
+            result.score,
+            result.nodesSearched,
+            result.cutoffs,
+            elapsed
+          );
+        }
+      }
+    }, 300);
+  }, [botType, getDepthForDifficulty, applyBotMove]);
 
   // Handle player drag & drop
   const onPieceDrop = useCallback(
@@ -126,45 +203,38 @@ export default function ChessGame() {
     }): boolean => {
       const game = gameRef.current;
 
-      // Don't allow moves if game is over, if target is null, or if it's bot's turn
       if (isGameOver || !targetSquare || game.turn() !== "w") {
         return false;
       }
 
-      // Try executing the move in chess.js
       try {
         const move = game.move({
           from: sourceSquare,
           to: targetSquare,
-          promotion: "q", // Auto-promote to Queen for Phase 1/2 simplicity
+          promotion: "q",
         });
 
         if (!move) return false;
 
-        // Move is legal! Update board and history
         setFen(game.fen());
         setMoveHistory(game.history());
         updateGameStatus();
 
-        // If game continues, trigger the bot move
         if (!game.isGameOver()) {
           triggerBotMove();
         }
 
         return true;
       } catch {
-        // Illegal move attempted
         return false;
       }
     },
     [isGameOver, updateGameStatus, triggerBotMove]
   );
 
-  // New Game: Resets everything to the initial board position
+  // New Game
   const handleNewGame = useCallback(() => {
-    if (botTimeoutRef.current) {
-      clearTimeout(botTimeoutRef.current);
-    }
+    if (botTimeoutRef.current) clearTimeout(botTimeoutRef.current);
     gameRef.current.reset();
     setFen(gameRef.current.fen());
     setMoveHistory([]);
@@ -173,10 +243,12 @@ export default function ChessGame() {
     setIsBotThinking(false);
     setCurrentEval(0);
     setCalcTimeMs(null);
+    setNodesSearched(null);
+    setCutoffsCount(null);
     setStatusMessage("Your turn (White)");
   }, []);
 
-  // Undo Move: Undoes both the bot's move and the player's last move so the player can try again
+  // Undo Move
   const handleUndo = useCallback(() => {
     if (botTimeoutRef.current) {
       clearTimeout(botTimeoutRef.current);
@@ -188,8 +260,6 @@ export default function ChessGame() {
 
     if (historyLength === 0) return;
 
-    // If it's currently White's turn, bot already replied, so undo 2 half-moves (bot + user)
-    // If it was somehow Black's turn (during bot delay), undo 1 half-move
     if (game.turn() === "w" && historyLength >= 2) {
       game.undo();
       game.undo();
@@ -203,12 +273,11 @@ export default function ChessGame() {
     updateGameStatus();
   }, [updateGameStatus]);
 
-  // Flip Board: Toggles perspective between White and Black
+  // Flip Board
   const handleFlipBoard = useCallback(() => {
     setBoardOrientation((prev) => (prev === "white" ? "black" : "white"));
   }, []);
 
-  // Format move history into numbered turns (e.g. 1. e4 e5)
   const formattedHistory = [];
   for (let i = 0; i < moveHistory.length; i += 2) {
     formattedHistory.push({
@@ -218,7 +287,6 @@ export default function ChessGame() {
     });
   }
 
-  // Format evaluation score into readable format
   const formattedEval = (currentEval / 100).toFixed(1);
   const evalLabel =
     currentEval === 0
@@ -247,21 +315,29 @@ export default function ChessGame() {
             </div>
             <div>
               <span className="font-semibold text-slate-100">
-                {botType === "minimax-v1" ? "Bot v1 (Minimax)" : "Random Bot"}{" "}
+                {botType === "smart-v2"
+                  ? `Smart Bot v2 (${difficulty.toUpperCase()})`
+                  : botType === "minimax-v1"
+                  ? "Bot v1 (Minimax)"
+                  : "Random Bot"}{" "}
                 <span className="text-slate-400 font-normal">(Black)</span>
               </span>
               <span className="ml-2 text-slate-500">
-                {botType === "minimax-v1" ? "Calculates 2 moves ahead" : "Plays randomly"}
+                {botType === "smart-v2"
+                  ? `Alpha-Beta Depth ${getDepthForDifficulty()} + PST`
+                  : botType === "minimax-v1"
+                  ? "Depth 2 Minimax"
+                  : "Plays randomly"}
               </span>
             </div>
           </div>
           {isBotThinking ? (
             <span className="flex items-center gap-1.5 text-blue-400 font-medium animate-pulse">
               <span className="w-2 h-2 rounded-full bg-blue-500"></span>
-              Thinking...
+              Thinking (Worker)...
             </span>
           ) : calcTimeMs !== null ? (
-            <span className="text-slate-500 font-mono text-[11px] flex items-center gap-1">
+            <span className="text-slate-400 font-mono text-[11px] flex items-center gap-1.5">
               <Zap className="w-3 h-3 text-amber-400" />
               {calcTimeMs}ms
             </span>
@@ -275,8 +351,8 @@ export default function ChessGame() {
               position: fen,
               boardOrientation: boardOrientation,
               onPieceDrop: onPieceDrop,
-              darkSquareStyle: { backgroundColor: "#334155" }, // Slate-700
-              lightSquareStyle: { backgroundColor: "#cbd5e1" }, // Slate-300
+              darkSquareStyle: { backgroundColor: "#334155" },
+              lightSquareStyle: { backgroundColor: "#cbd5e1" },
               dropSquareStyle: {
                 boxShadow: "inset 0 0 1px 4px #3b82f6",
               },
@@ -304,42 +380,83 @@ export default function ChessGame() {
         </div>
       </div>
 
-      {/* Right Column: Controls & Game Details */}
+      {/* Right Column: Controls & Engine Insights */}
       <div className="w-full lg:w-80 flex flex-col gap-4">
-        {/* Opponent Selector */}
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-lg">
-          <span className="text-xs uppercase font-semibold text-slate-400 tracking-wider flex items-center gap-1.5 mb-2.5">
-            <Cpu className="w-3.5 h-3.5 text-blue-400" />
-            Select Bot Opponent
-          </span>
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              onClick={() => setBotType("minimax-v1")}
-              className={`py-2 px-2.5 rounded-lg text-xs font-medium border transition-all text-left flex flex-col cursor-pointer ${
-                botType === "minimax-v1"
-                  ? "bg-blue-600/20 border-blue-500 text-blue-300 shadow-sm"
-                  : "bg-slate-950/40 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700"
-              }`}
-            >
-              <span className="font-semibold text-slate-100">Bot v1</span>
-              <span className="text-[10px] text-slate-400 mt-0.5">Minimax Depth 2</span>
-            </button>
+        {/* Opponent & Engine Selector */}
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-lg space-y-3">
+          <div>
+            <span className="text-xs uppercase font-semibold text-slate-400 tracking-wider flex items-center gap-1.5 mb-2">
+              <Cpu className="w-3.5 h-3.5 text-blue-400" />
+              Select Bot Opponent
+            </span>
+            <div className="grid grid-cols-3 gap-1.5">
+              <button
+                onClick={() => setBotType("smart-v2")}
+                className={`py-1.5 px-2 rounded-lg text-xs font-medium border transition-all text-center flex flex-col items-center cursor-pointer ${
+                  botType === "smart-v2"
+                    ? "bg-blue-600/20 border-blue-500 text-blue-300 shadow-sm"
+                    : "bg-slate-950/40 border-slate-800 text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                <span className="font-semibold text-slate-100">Smart v2</span>
+                <span className="text-[9px] text-slate-400">Alpha-Beta</span>
+              </button>
 
-            <button
-              onClick={() => setBotType("random")}
-              className={`py-2 px-2.5 rounded-lg text-xs font-medium border transition-all text-left flex flex-col cursor-pointer ${
-                botType === "random"
-                  ? "bg-blue-600/20 border-blue-500 text-blue-300 shadow-sm"
-                  : "bg-slate-950/40 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700"
-              }`}
-            >
-              <span className="font-semibold text-slate-100">Random Bot</span>
-              <span className="text-[10px] text-slate-400 mt-0.5">Phase 1 Baseline</span>
-            </button>
+              <button
+                onClick={() => setBotType("minimax-v1")}
+                className={`py-1.5 px-2 rounded-lg text-xs font-medium border transition-all text-center flex flex-col items-center cursor-pointer ${
+                  botType === "minimax-v1"
+                    ? "bg-blue-600/20 border-blue-500 text-blue-300 shadow-sm"
+                    : "bg-slate-950/40 border-slate-800 text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                <span className="font-semibold text-slate-100">Bot v1</span>
+                <span className="text-[9px] text-slate-400">Minimax</span>
+              </button>
+
+              <button
+                onClick={() => setBotType("random")}
+                className={`py-1.5 px-2 rounded-lg text-xs font-medium border transition-all text-center flex flex-col items-center cursor-pointer ${
+                  botType === "random"
+                    ? "bg-blue-600/20 border-blue-500 text-blue-300 shadow-sm"
+                    : "bg-slate-950/40 border-slate-800 text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                <span className="font-semibold text-slate-100">Random</span>
+                <span className="text-[9px] text-slate-400">Phase 1</span>
+              </button>
+            </div>
           </div>
+
+          {/* Difficulty Selection (Active when Smart v2 is selected) */}
+          {botType === "smart-v2" && (
+            <div className="pt-2 border-t border-slate-800/80">
+              <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block mb-1.5">
+                Difficulty Level
+              </span>
+              <div className="grid grid-cols-3 gap-1.5">
+                {(["easy", "medium", "hard"] as DifficultyLevel[]).map((level) => (
+                  <button
+                    key={level}
+                    onClick={() => setDifficulty(level)}
+                    className={`py-1 px-2 rounded-md text-xs font-medium border capitalize transition-all cursor-pointer ${
+                      difficulty === level
+                        ? "bg-emerald-500/20 border-emerald-500 text-emerald-300 font-semibold"
+                        : "bg-slate-950/40 border-slate-800 text-slate-400 hover:text-slate-200"
+                    }`}
+                  >
+                    {level}
+                    <span className="text-[9px] block text-slate-500 font-normal">
+                      Depth {level === "easy" ? 2 : level === "medium" ? 3 : 4}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* Status Card & Material Balance */}
+        {/* Engine Telemetry & Evaluation */}
         <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-lg">
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs uppercase font-semibold text-slate-400 tracking-wider">
@@ -377,6 +494,20 @@ export default function ChessGame() {
               {statusMessage}
             </p>
           </div>
+
+          {/* Real-time search telemetry */}
+          {botType === "smart-v2" && nodesSearched !== null && (
+            <div className="mt-3 pt-3 border-t border-slate-800/80 grid grid-cols-2 gap-2 text-[11px] font-mono text-slate-400">
+              <div className="flex items-center gap-1.5">
+                <Activity className="w-3 h-3 text-cyan-400" />
+                <span>Nodes: <strong className="text-slate-200">{nodesSearched.toLocaleString()}</strong></span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <Scissors className="w-3 h-3 text-emerald-400" />
+                <span>Pruned: <strong className="text-slate-200">{cutoffsCount?.toLocaleString()}</strong></span>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Action Controls */}
@@ -414,7 +545,7 @@ export default function ChessGame() {
         </div>
 
         {/* Move History Log */}
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-lg flex-1 min-h-[200px] flex flex-col">
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-lg flex-1 min-h-[180px] flex flex-col">
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs uppercase font-semibold text-slate-400 tracking-wider">
               Move History
@@ -422,7 +553,7 @@ export default function ChessGame() {
             <span className="text-xs text-slate-500">{moveHistory.length} moves</span>
           </div>
 
-          <div className="flex-1 overflow-y-auto max-h-[220px] pr-1 space-y-1 font-mono text-xs">
+          <div className="flex-1 overflow-y-auto max-h-[190px] pr-1 space-y-1 font-mono text-xs">
             {formattedHistory.length === 0 ? (
               <p className="text-slate-600 italic py-4 text-center">No moves yet. Make your first move!</p>
             ) : (

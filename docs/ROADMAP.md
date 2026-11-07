@@ -84,7 +84,7 @@ Most chess engines (like Stockfish) play either perfectly or unnaturally robotic
 
 ---
 
-### Phase 3: Smarter & Faster Bot
+### Phase 3: Smarter & Faster Bot (Completed)
 * **Goal**: Upgrade the bot's speed and positional understanding using Alpha-Beta pruning, Piece-Square tables, move ordering, and Web Workers.
 * **Steps**:
   1. Add **Alpha-Beta Pruning** to eliminate unnecessary search branches, allowing deeper search (depth 3-4).
@@ -94,10 +94,10 @@ Most chess engines (like Stockfish) play either perfectly or unnaturally robotic
   5. Expose difficulty presets (Easy: depth 2; Medium: depth 3; Hard: depth 4).
   6. Benchmark bot performance and move quality against Stockfish WASM.
 * **Done When**:
-  - [ ] Bot reaches depth 4 in under 1 second per move.
-  - [ ] Board UI animations stay completely smooth while the bot thinks (Web Worker verification).
-  - [ ] Bot demonstrates basic opening development and positional awareness.
-  - [ ] Bot easily defeats Bot v1 in test matches.
+  - [x] Bot reaches depth 4 in under 1 second per move.
+  - [x] Board UI animations stay completely smooth while the bot thinks (Web Worker verification).
+  - [x] Bot demonstrates basic opening development and positional awareness.
+  - [x] Bot easily defeats Bot v1 in test matches.
 
 ---
 

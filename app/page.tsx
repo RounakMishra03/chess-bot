@@ -1,5 +1,5 @@
 import ChessGame from "@/components/ChessGame";
-import { Bot, Sparkles, BrainCircuit } from "lucide-react";
+import { Bot, Sparkles, BrainCircuit, Cpu } from "lucide-react";
 
 export default function Home() {
   return (
@@ -13,20 +13,23 @@ export default function Home() {
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-xl font-bold tracking-tight text-white">Chess-Bot</h1>
-              <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                Phase 2
+              <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+                Phase 3
               </span>
             </div>
-            <p className="text-xs text-slate-400">Bot v1: Minimax Material Engine (Depth 2)</p>
+            <p className="text-xs text-slate-400">Smarter &amp; Faster Bot (Alpha-Beta, PST, Web Worker)</p>
           </div>
         </div>
 
         <div className="hidden sm:flex items-center gap-2 text-xs text-slate-400 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-lg">
           <BrainCircuit className="w-3.5 h-3.5 text-blue-400" />
-          <span>AI Search: <strong>Minimax (2 plies)</strong></span>
+          <span>Alpha-Beta + Move Ordering</span>
+          <span className="text-slate-600">|</span>
+          <Cpu className="w-3.5 h-3.5 text-cyan-400" />
+          <span>Web Worker</span>
           <span className="text-slate-600">|</span>
           <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-          <span>Rules: <strong>chess.js</strong></span>
+          <span>Piece-Square Tables</span>
         </div>
       </header>
 
@@ -37,7 +40,7 @@ export default function Home() {
 
       {/* Footer */}
       <footer className="max-w-6xl w-full mx-auto pt-6 border-t border-slate-800/80 text-center text-xs text-slate-500 mt-6">
-        <span>Chess-Bot • Phase 2: Minimax search looking 2 plies ahead with piece evaluation &amp; bot toggle</span>
+        <span>Chess-Bot • Phase 3: Alpha-Beta pruning, Piece-Square positional values, non-blocking Web Worker, and Difficulty presets</span>
       </footer>
     </div>
   );
