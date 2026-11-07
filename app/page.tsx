@@ -1,5 +1,5 @@
 import ChessGame from "@/components/ChessGame";
-import { Bot, Sparkles } from "lucide-react";
+import { Bot, Sparkles, BrainCircuit } from "lucide-react";
 
 export default function Home() {
   return (
@@ -13,17 +13,20 @@ export default function Home() {
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-xl font-bold tracking-tight text-white">Chess-Bot</h1>
-              <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20">
-                Phase 1
+              <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                Phase 2
               </span>
             </div>
-            <p className="text-xs text-slate-400">Playable Board vs. Random Bot</p>
+            <p className="text-xs text-slate-400">Bot v1: Minimax Material Engine (Depth 2)</p>
           </div>
         </div>
 
         <div className="hidden sm:flex items-center gap-2 text-xs text-slate-400 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-lg">
+          <BrainCircuit className="w-3.5 h-3.5 text-blue-400" />
+          <span>AI Search: <strong>Minimax (2 plies)</strong></span>
+          <span className="text-slate-600">|</span>
           <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-          <span>Legal move validation powered by <strong>chess.js</strong></span>
+          <span>Rules: <strong>chess.js</strong></span>
         </div>
       </header>
 
@@ -34,7 +37,7 @@ export default function Home() {
 
       {/* Footer */}
       <footer className="max-w-6xl w-full mx-auto pt-6 border-t border-slate-800/80 text-center text-xs text-slate-500 mt-6">
-        <span>Chess-Bot • Phase 1: Playable Board with Legal Moves, Check/Checkmate alerts, Undo &amp; Flip</span>
+        <span>Chess-Bot • Phase 2: Minimax search looking 2 plies ahead with piece evaluation &amp; bot toggle</span>
       </footer>
     </div>
   );

@@ -70,7 +70,7 @@ Most chess engines (like Stockfish) play either perfectly or unnaturally robotic
 
 ---
 
-### Phase 2: Bot v1 (Basic Minimax)
+### Phase 2: Bot v1 (Basic Minimax) (Completed)
 * **Goal**: Create our first intelligent bot that values pieces and calculates short sequences ahead to capture hanging pieces and avoid immediate traps.
 * **Steps**:
   1. Define standard material values: Pawn = 100, Knight = 300, Bishop = 300, Rook = 500, Queen = 900, King = 20000.
@@ -78,9 +78,9 @@ Most chess engines (like Stockfish) play either perfectly or unnaturally robotic
   3. Implement the classic Minimax search algorithm (`lib/engine/minimax.ts`) with a fixed depth of 2 plies (1 full turn ahead).
   4. Hook Bot v1 into the board UI with a toggle to choose between "Random Bot" and "Bot v1 (Minimax)".
 * **Done When**:
-  - [ ] Bot v1 reliably captures unprotected (hanging) player pieces.
-  - [ ] Bot v1 avoids moving its own valuable pieces into immediate capture.
-  - [ ] Calculation completes in under 200ms without noticeable lag.
+  - [x] Bot v1 reliably captures unprotected (hanging) player pieces.
+  - [x] Bot v1 avoids moving its own valuable pieces into immediate capture.
+  - [x] Calculation completes in under 200ms without noticeable lag.
 
 ---
 
