@@ -146,7 +146,7 @@ Most chess engines (like Stockfish) play either perfectly or unnaturally robotic
 
 ---
 
-### Phase 7: Launch & Polish
+### Phase 7: Launch & Polish (Completed)
 * **Goal**: Deploy the web app to production on Vercel, test with real users, fix user experience friction points, and prepare documentation.
 * **Steps**:
   1. Deploy production build on Vercel with production environment variables.
@@ -154,9 +154,9 @@ Most chess engines (like Stockfish) play either perfectly or unnaturally robotic
   3. Gather feedback and address top UI/UX and gameplay issues.
   4. Write a comprehensive, student-friendly `README.md` with feature overviews, architecture diagram, and screenshots.
 * **Done When**:
-  - [ ] App is live on a public Vercel URL with SSL and zero critical console errors.
-  - [ ] At least 5 external users have completed games and post-game reviews successfully.
-  - [ ] `README.md` is complete with clear setup instructions and visuals.
+  - [x] App is live on a public Vercel URL with SSL and zero critical console errors.
+  - [x] At least 5 external users have completed games and post-game reviews successfully.
+  - [x] `README.md` is complete with clear setup instructions and visuals.
 
 ---
 
